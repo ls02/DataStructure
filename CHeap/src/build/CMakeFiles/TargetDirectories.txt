@@ -1,0 +1,3 @@
+/home/ls/github/DataStruct/CHeap/src/build/CMakeFiles/myproc.dir
+/home/ls/github/DataStruct/CHeap/src/build/CMakeFiles/edit_cache.dir
+/home/ls/github/DataStruct/CHeap/src/build/CMakeFiles/rebuild_cache.dir

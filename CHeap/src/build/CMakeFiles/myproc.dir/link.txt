@@ -1,0 +1,1 @@
+/usr/bin/cc CMakeFiles/myproc.dir/test.c.o CMakeFiles/myproc.dir/Heap.c.o -o myproc 

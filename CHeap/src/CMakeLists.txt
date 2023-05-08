@@ -1,0 +1,13 @@
+CMAKE_MINIMUM_REQUIRED(VERSION 3.26.3)
+
+PROJECT(CHEAP C)
+
+add_compile_options(-std=c99 -g)
+
+SET(SRC_LIST test.c Heap.c)
+
+MESSAGE(STATUS "This is BINARY dir " ${TEST_BINARY_DIR})
+
+MESSAGE(STATUS "This is SOURCE dir " ${TEST_SOURCE_DIR})
+
+ADD_EXECUTABLE(myproc ${SRC_LIST})
