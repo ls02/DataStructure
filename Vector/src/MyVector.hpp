@@ -68,6 +68,26 @@ namespace ls
     public:
         typedef T *iterator;
 
+        iterator begin()
+        {
+            return _start;
+        }
+
+        iterator end()
+        {
+            return _finish;
+        }
+
+        iterator begin() const
+        {
+            return _start;
+        }
+
+        iterator end() const
+        {
+            return _finish;
+        }
+
     public:
         /***
          * @description: 默认构造函数
@@ -221,6 +241,41 @@ namespace ls
             }
         }
 
+        void pop_back()
+        {
+            erase(size());
+        }
+
+        /***
+         * @description: 任意位置删除
+         * @param {size_t} pos 删除 pos 位置的值
+         * @return {*} 返回删除后的位置，防止迭代器失效
+         */
+        iterator erase(size_t pos)
+        {
+            assert(pos <= size());
+
+            T *new_start = _start + pos;
+            for (int i = pos; i < size() - 1; i++)
+            {
+                new_start[i] = new_start[i + 1];
+            }
+
+            _finish--;
+
+            return new_start;
+        }
+
+        int operator[](size_t pos)
+        {
+            return _start[pos];
+        }
+
+        int at(size_t pos)
+        {
+            return _start[pos];
+        }
+
         void Printf() const
         {
             for (int i = 0; i < size(); i++)
@@ -231,11 +286,38 @@ namespace ls
             printf("\n");
         }
 
+        void swap(vector<T> &other)
+        {
+            iterator tmp = _start;
+            _start = other._start;
+            other._start = tmp;
+
+            tmp = _finish;
+            _finish = other._finish;
+            other._finish = tmp;
+
+            tmp = _end_of_storage;
+            _end_of_storage = other._end_of_storage;
+            other._end_of_storage = tmp;
+        }
+
+        friend std::ostream &operator<<(std::ostream &out, const vector<int> &array);
+
     private:
         iterator _start;
         iterator _finish;
         iterator _end_of_storage;
     };
+
+    std::ostream &operator<<(std::ostream &out, const vector<int> &array)
+    {
+        for (auto e : array)
+        {
+            out << e << ' ';
+        }
+
+        return out;
+    }
 
 }
 
