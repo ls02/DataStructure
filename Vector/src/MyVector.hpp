@@ -8,16 +8,6 @@
  * @
  * @Copyright (c) 2023 by ls02, All Rights Reserved.
  */
-/***
- * @Author: ls02 liangson02@163.com
- * @Date: 2023-07-13 18:54:57
- * @LastEditors: ls02 liangson02@163.com
- * @LastEditTime: 2023-07-13 18:54:58
- * @FilePath: /Vector/src/MyVector.hpp
- * @Description:
- * @
- * @Copyright (c) 2023 by ls02, All Rights Reserved.
- */
 /*
  *                        _oo0oo_
  *                       o8888888o
@@ -98,23 +88,40 @@ namespace ls
         {
         }
 
+        vector(size_t n, const T& value = T())
+        :_start(nullptr),_finish(nullptr),_end_of_storage(nullptr)
+        {
+            reserve(n);
+
+            for (size_t i = 0; i < n; i++)
+            {
+                push_back(value);
+            }
+        }
+
+        template <class InputIterator>
+		vector(InputIterator first, InputIterator last)
+			:_start(nullptr)
+			, _finish(nullptr)
+			, _end_of_storage(nullptr)
+		{
+			while(first != last)
+			{
+				push_back(*first);
+				++first;
+			}
+		}
+
         /***
          * @description: 拷贝构造
          * @param {vector} &other
          * @return {*}
          */
-        vector(const vector &other)
+        vector(const vector<T> &other)
+        :_start(nullptr),_finish(nullptr),_end_of_storage(nullptr)
         {
-            // 初始化
-            _start = new T[other.capacity()];
-            _end_of_storage = _start;
-            _end_of_storage += other.size();
-
-            // 拷贝数据
-            for (int i = 0; i < other.size(); i++)
-            {
-                _start[i] = other[i];
-            }
+            vector<T> tmp(other.begin(), other.end());
+            swap(tmp);
         }
 
         /***
@@ -124,6 +131,13 @@ namespace ls
         void push_back(const T &value)
         {
             insert(size(), value);
+        }
+
+        vector<T>& operator=(vector<T> v)
+        {
+            swap(v);
+
+            return *this;
         }
 
         /***
@@ -266,14 +280,23 @@ namespace ls
             return new_start;
         }
 
+        /*** 
+         * @description: []函数重载
+         * @param {size_t} pos 
+         * @return {*} 返回当前下标的元素
+         */
         int operator[](size_t pos)
         {
             return _start[pos];
         }
 
+        /*** 
+         * @description: 获取pos位置的元素
+         * @param {size_t} pos
+         * @return {*} 返回当前下标的元素
+         */
         int at(size_t pos)
-        {
-            return _start[pos];
+        { return _start[pos];
         }
 
         void Printf() const
@@ -286,19 +309,16 @@ namespace ls
             printf("\n");
         }
 
+        /*** 
+         * @description: 交换函数
+         * @param {vector<T>} &other
+         * @return {*}
+         */
         void swap(vector<T> &other)
         {
-            iterator tmp = _start;
-            _start = other._start;
-            other._start = tmp;
-
-            tmp = _finish;
-            _finish = other._finish;
-            other._finish = tmp;
-
-            tmp = _end_of_storage;
-            _end_of_storage = other._end_of_storage;
-            other._end_of_storage = tmp;
+            std::swap(_start, other._start);
+			std::swap(_finish, other._finish);
+			std::swap(_end_of_storage, other._end_of_storage);
         }
 
         friend std::ostream &operator<<(std::ostream &out, const vector<int> &array);
