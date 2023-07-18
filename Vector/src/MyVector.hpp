@@ -1,13 +1,14 @@
-/***
+/*** 
  * @Author: ls02 liangson02@163.com
- * @Date: 2023-07-13 19:18:32
+ * @Date: 2023-07-18 11:42:11
  * @LastEditors: ls02 liangson02@163.com
- * @LastEditTime: 2023-07-15 02:18:35
- * @FilePath: /Vector/src/MyVector.hpp
- * @Description:
+ * @LastEditTime: 2023-07-18 11:47:42
+ * @FilePath: /DataStructure/Vector/src/MyVector.hpp
+ * @Description: 
  * @
- * @Copyright (c) 2023 by ls02, All Rights Reserved.
+ * @Copyright (c) 2023 by ls02, All Rights Reserved. 
  */
+
 /*
  *                        _oo0oo_
  *                       o8888888o
@@ -133,6 +134,10 @@ namespace ls
             insert(size(), value);
         }
 
+        /*** 
+         * @description: 赋值重载
+         * @return {*} 返回一个深拷贝好的 vector
+         */
         vector<T>& operator=(vector<T> v)
         {
             swap(v);
@@ -179,6 +184,12 @@ namespace ls
             }
 
             _finish++;
+        }
+
+        void clear()
+        {
+            delete[] _start;
+            _start = _finish = _end_of_storage = nullptr;
         }
 
         /***
