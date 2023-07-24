@@ -1,3 +1,13 @@
+/*
+ * @Author: ls02 liangson02@163.com
+ * @Date: 2023-07-24 10:26:10
+ * @LastEditors: ls02 liangson02@163.com
+ * @LastEditTime: 2023-07-24 10:26:10
+ * @FilePath: /List/src/test1.cc
+ * @Description: 
+ * 
+ * Copyright (c) 2023 by ls02, All Rights Reserved. 
+ */
 #include <iostream>
 #include "List.hpp"
 
