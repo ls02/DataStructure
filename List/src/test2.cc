@@ -2,14 +2,14 @@
  * @Author: ls02 liangson02@163.com
  * @Date: 2023-07-24 09:52:45
  * @LastEditors: ls02 liangson02@163.com
- * @LastEditTime: 2023-07-24 17:56:57
- * @FilePath: /List/src/test2.cc
+ * @LastEditTime: 2023-07-25 14:20:14
+ * @FilePath: /DataStructure/List/src/test2.cc
  * @Description:
  *
  * Copyright (c) 2023 by ls02, All Rights Reserved.
  */
 #include <iostream>
-#include "MyList.hpp"
+#include "List.hpp"
 
 void Func(const ls::list<int> &l)
 {
@@ -39,10 +39,12 @@ void Test1()
     l.print();
 
     const ls::list<int> l2(l);
-    ls::list<int> l3(l);
+    ls::list<int> l3;
+
+    l3 = l;
     l2.print();
 
-    // Func(l2);
+    Func(l2);
 
     l.erase(l.begin());
 
@@ -77,6 +79,21 @@ void Test1()
 
     std::cout << "l3: ";
     l3.print();
+
+    ls::list<int> l4(l);
+        ls::list<int>::iterator it1 = l4.begin();
+
+    std::cout << "l4: ";
+
+    ls::list<int>::reverse_iterator rit = l4.rbegin();
+
+    while (rit != l4.rend())
+    {
+        std::cout << *rit << " ";
+        ++rit;
+    }
+
+    printf("\n");
 
 }
 
