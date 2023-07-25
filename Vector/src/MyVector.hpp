@@ -1,8 +1,8 @@
 /*** 
  * @Author: ls02 liangson02@163.com
- * @Date: 2023-07-18 11:42:11
+ * @Date: 2023-07-18 17:11:19
  * @LastEditors: ls02 liangson02@163.com
- * @LastEditTime: 2023-07-18 11:47:42
+ * @LastEditTime: 2023-07-25 14:40:05
  * @FilePath: /DataStructure/Vector/src/MyVector.hpp
  * @Description: 
  * @
@@ -50,6 +50,7 @@
 
 #include <iostream>
 #include <assert.h>
+#include "../../ReverseIterator/ReverseIterator.hpp"
 
 namespace ls
 {
@@ -58,6 +59,9 @@ namespace ls
     {
     public:
         typedef T *iterator;
+        typedef const T *const_iterator;
+        typedef ReverseIterator<iterator, T&, T*> reverse_iterator;
+        typedef ReverseIterator<const_iterator, const T&, const T*> const_reverse_iterator;
 
         iterator begin()
         {
@@ -69,14 +73,34 @@ namespace ls
             return _finish;
         }
 
-        iterator begin() const
+        const_iterator begin() const
         {
             return _start;
         }
 
-        iterator end() const
+        const_iterator end() const
         {
             return _finish;
+        }
+
+        reverse_iterator rbegin()
+        {
+            return reverse_iterator(end());
+        }
+
+        reverse_iterator rend()
+        {
+            return reverse_iterator(begin());
+        }
+
+        const_reverse_iterator rbegin() const
+        {
+            return const_reverse_iterator(end());
+        }
+
+        const_reverse_iterator rend() const
+        {
+            return const_reverse_iterator(begin());
         }
 
     public:
@@ -280,15 +304,14 @@ namespace ls
         {
             assert(pos <= size());
 
-            T *new_start = _start + pos;
-            for (int i = pos; i < size() - 1; i++)
+            for (int i = 0; i < size() - 1; i++)
             {
-                new_start[i] = new_start[i + 1];
+                _start[pos + i] = _start[pos + i + 1];
             }
 
             _finish--;
 
-            return new_start;
+            return _start + pos;
         }
 
         /*** 

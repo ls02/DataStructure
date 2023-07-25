@@ -2,7 +2,7 @@
  * @Author: ls02 liangson02@163.com
  * @Date: 2023-07-18 11:09:57
  * @LastEditors: ls02 liangson02@163.com
- * @LastEditTime: 2023-07-18 11:26:20
+ * @LastEditTime: 2023-07-18 17:40:14
  * @FilePath: /Vector/unit_test/unit_vector.cc
  * @Description: 
  * 
@@ -15,7 +15,7 @@
 
 class VectorTest : public testing::Test {};
 
-TEST_F(VectorTest, insert)
+TEST_F(VectorTest, InsertTest)
 {
     ls::vector<int> v1;
     
@@ -56,7 +56,42 @@ TEST_F(VectorTest, insert)
     EXPECT_EQ(12, v1[3]);
 }
 
+TEST_F (VectorTest, EraseTest)
+{
+    ls::vector<int> v1;
 
+    v1.push_back(1);
+    v1.push_back(2);
+    v1.push_back(3);
+    v1.push_back(4);
+    v1.push_back(5);
+    v1.push_back(6);
+    v1.push_back(7);
+    v1.push_back(8);
+    v1.push_back(9);
+    v1.push_back(10);
+    v1.push_back(11);
+
+    v1.erase(3);
+    EXPECT_EQ(5, v1[3]);
+    v1.erase(3);
+    EXPECT_EQ(6, v1[3]);
+    v1.erase(3);
+    EXPECT_EQ(7, v1[3]);
+
+
+    v1.erase(0);
+    EXPECT_EQ(2, v1[0]);
+    v1.erase(0);
+    EXPECT_EQ(3, v1[0]);
+
+    v1.erase(v1.size() - 1);
+    EXPECT_EQ(10, v1[v1.size() - 1]);
+    v1.erase(v1.size() - 1);
+    EXPECT_EQ(9, v1[v1.size() - 1]);
+    v1.erase(v1.size() - 1);
+    EXPECT_EQ(8, v1[v1.size() - 1]);
+}
 
 int main(int argc, char* argv[])
 {
