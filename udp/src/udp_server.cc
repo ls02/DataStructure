@@ -2,49 +2,12 @@
  * @Author: ls02 liangson02@163.com
  * @Date: 2023-09-12 16:54:54
  * @LastEditors: ls02 liangson02@163.com
- * @LastEditTime: 2023-09-12 22:34:57
+ * @LastEditTime: 2023-09-12 22:53:30
  * @FilePath: /DataStructure/udp/src/udp_server.cc
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 #include "socket.hpp"
 #include <iostream>
-
-// int main(int argc, char *argv[])
-// {
-//     if (argc != 2)
-//     {
-//         std::cout << "name port" << std::endl;
-
-//         return 0;
-//     }
-
-//     int16_t port = atoi(argv[1]);
-//     socke local;
-//     // int socket_fd = local.Socket();
-//     int socket_fd = socket(AF_INET, SOCK_DGRAM, 0);
-//     local.Bind(socket_fd, port);
-
-//     char buff[1024];
-//     while (true)
-//     {
-//         struct sockaddr_in peer;
-//         socklen_t len = sizeof(peer);
-
-//         ssize_t cnt = recvfrom(socket_fd, buff, sizeof(buff) - 1, 0, (sockaddr *)&peer, &len);
-//         if (cnt > 0)
-//         {
-//             buff[cnt] = 0;
-//             std::cout << "client# " << buff << std::endl;
-//         }
-
-//         std::string echo_hello = "hello";
-
-//         // sendto(socket_fd, buff, sizeof(buff) - 1, 0, (struct sockaddr*)&peer, len);
-//         sendto(socket_fd, echo_hello.c_str(), echo_hello.size(), 0, (struct sockaddr *)&peer, len);
-//     }
-
-//     return 0;
-// }
 
 int main(int argc, char *argv[])
 {
