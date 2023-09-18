@@ -2,55 +2,13 @@
  * @Author: ls02 liangson02@163.com
  * @Date: 2023-09-12 17:49:22
  * @LastEditors: ls02 liangson02@163.com
- * @LastEditTime: 2023-09-12 22:43:49
+ * @LastEditTime: 2023-09-18 22:12:20
  * @FilePath: /DataStructure/udp/src/udp_clinet.cc
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 #include <iostream>
 #include "socket.hpp"
 #include <cstring>
-
-// int main(int argc, char *argv[])
-// {
-//     if (argc != 3)
-//     {
-//         std::cout << "name ip port" << std::endl;
-
-//         return 1;
-//     }
-
-//     socke local;
-//     // int sock_fd = local.Socket();
-//     int sock_fd = socket(AF_INET, SOCK_DGRAM, 0);
-
-//     struct sockaddr_in server;
-//     server.sin_family = AF_INET;
-//     server.sin_port = htons(atoi(argv[2]));
-//     server.sin_addr.s_addr = inet_addr(argv[1]);
-
-//     while (true)
-//     {
-//         std::cout << "clinet# ";
-//         char line[1024];
-//         fgets(line, sizeof(line), stdin);
-
-//         sendto(sock_fd, line, strlen(line), 0, (struct sockaddr *)&server, sizeof(server));
-
-//         // 接收服务器的消息
-//         struct sockaddr_in peer;
-//         socklen_t len = sizeof(peer);
-
-//         char buff[1024];
-//         ssize_t cnt = recvfrom(sock_fd, buff, sizeof(buff), 0, (struct sockaddr *)&peer, &len);
-//         if (cnt > 0)
-//         {
-//             buff[cnt] = 0;
-//             std::cout << buff << std::endl;
-//         }
-//     }
-
-//     return 0;
-// }
 
 int main(int argc, char *argv[])
 {
@@ -97,8 +55,11 @@ int main(int argc, char *argv[])
         if (cnt > 0)
         {
             buff[cnt] = 0;
+            std::string messg_str(inet_ntoa(peer.sin_addr));
+            int16_t port = ntohs(peer.sin_port);
 
-            std::cout << "server# " << buff << std::endl;
+            std::cout << "[ " << messg_str << ":" << port << " ] "
+                      << "server# " << buff << std::endl;
         }
     }
 
