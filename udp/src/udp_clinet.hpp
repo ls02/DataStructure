@@ -65,7 +65,10 @@ public:
                 break;
             }
 
-            sendto(data._sock_fd, message.c_str(), message.size(), 0, (struct sockaddr *)&server, sizeof(server));
+            if (sendto(data._sock_fd, message.c_str(), message.size(), 0, (struct sockaddr *)&server, sizeof(server)) == -1)
+            {
+                std::cerr << "code: " << errno << " error: " << strerror(errno) << std::endl;
+            }
         }
     }
 
