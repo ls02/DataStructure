@@ -1,3 +1,11 @@
+/*
+ * @Author: ls02 liangson02@163.com
+ * @Date: 2023-09-22 17:41:55
+ * @LastEditors: ls02 liangson02@163.com
+ * @LastEditTime: 2023-09-22 17:43:09
+ * @FilePath: /DataStructure/tcp/src/log.hpp
+ * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
+ */
 #pragma once
 
 #include <iostream>
@@ -43,7 +51,7 @@ void logMessage(int level, const char *format, ...)
     ttime = localtime(&timestamp);
     strftime(now, 64, "%Y-%m-%d %H:%M:%S", ttime);
     // snprintf(stdBuffer, sizeof stdBuffer, "[%s] [%ld] ", gLevelMap[level], timestamp);
-    snprintf(stdBuffer, sizeof stdBuffer, "[%s] [%ld] ", gLevelMap[level], ttime);
+    snprintf(stdBuffer, sizeof stdBuffer, "[%s] [%s] ", gLevelMap[level], now);
 
     char logBuffer[1024]; // 自定义部分
     va_list args;
