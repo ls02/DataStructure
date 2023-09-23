@@ -2,8 +2,8 @@
  * @Author: ls02 liangson02@163.com
  * @Date: 2023-09-22 17:41:55
  * @LastEditors: ls02 liangson02@163.com
- * @LastEditTime: 2023-09-22 17:43:09
- * @FilePath: /DataStructure/tcp/src/log.hpp
+ * @LastEditTime: 2023-09-23 17:06:00
+ * @FilePath: /code/DataStructure/tcp/src/log.hpp
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 #pragma once
@@ -61,7 +61,7 @@ void logMessage(int level, const char *format, ...)
     va_end(args);
 
     FILE *fp = fopen(LOGFILE, "a");
-    printf("%s%s\n", stdBuffer, logBuffer);
-    // fprintf(fp, "%s%s\n", stdBuffer, logBuffer);
+    // printf("%s%s\n", stdBuffer, logBuffer);
+    fprintf(fp, "%s%s\n", stdBuffer, logBuffer);
     fclose(fp);
 }

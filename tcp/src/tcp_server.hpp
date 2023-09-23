@@ -2,8 +2,8 @@
  * @Author: ls02 liangson02@163.com
  * @Date: 2023-09-22 12:42:50
  * @LastEditors: ls02 liangson02@163.com
- * @LastEditTime: 2023-09-22 17:32:53
- * @FilePath: /DataStructure/tcp/src/tcp_server.hpp
+ * @LastEditTime: 2023-09-23 17:09:21
+ * @FilePath: /code/DataStructure/tcp/src/tcp_server.hpp
  * @Description: 这是默认设置,请设置`customMade`, 打开koroFileHeader查看配置 进行设置: https://github.com/OBKoro1/koro1FileHeader/wiki/%E9%85%8D%E7%BD%AE
  */
 #ifndef __TCP_SERVER_HPP__
@@ -109,6 +109,7 @@ public:
                 std::string addr = inet_ntoa(peer.sin_addr);
                 addr += ":";
                 addr += std::to_string(ntohs(peer.sin_port));
+                close(_listen_sock);
 
                 logMessage(NORMAL, "link success, servicesock: %d | %s |\n",
                            sock, addr.c_str());
@@ -119,30 +120,40 @@ public:
                     int ret = read(sock, buff, sizeof(buff));
                     if (ret > 0)
                     {
+                        std::string mesg_str("[ " + addr + "]# ");
                         // 把数据取出来
                         buff[ret] = 0;
+                        mesg_str += buff;
                         // 取出对端ip，端口放入新的 str 内
-                        std::cout << "client# " << buff << std::endl;
+                        std::cout << mesg_str << std::endl;
 
-                        std::string mesg_str("[ " + addr + "] # ");
                         ret = write(sock, mesg_str.c_str(), mesg_str.size());
                         if (ret < 0)
                         {
                             logMessage(WARNING, "write fail: %d:%s", errno, strerror(errno));
                             close(sock);
+                            exit(0);
                         }
                         else if (ret == 0)
                         {
                             logMessage(NORMAL, "peer close, quit ...");
                             close(sock);
+                            exit(0);
                         }
                         else
                         {
                             logMessage(NORMAL, "write success!");
                         }
                     }
+                    else
+                    {
+                        logMessage(NORMAL, "peer close, quit ...");
+                        close(sock);
+                        exit(1);
+                    }
                 }
             }
+            close(sock);
         }
     }
 
