@@ -52,7 +52,7 @@ template <class T> class BSTree {
         }
 
         // 这里的 parent 理论来讲不可能为空
-        if (parent->_left == cur) {
+        if (parent->_val > val) {
             parent->_left = new_node;
         } else {
             parent->_right = new_node;
@@ -66,7 +66,7 @@ template <class T> class BSTree {
         std::cout << std::endl;
     }
 
-    void _print(Node *root) {
+    void _print(Node *&root) {
         if (root == nullptr) {
             return;
         }
@@ -75,11 +75,11 @@ template <class T> class BSTree {
             _print(root->_left);
         }
 
-        if (root->_right != nullptr) {
-            _print(root->_left);
-        }
-
         std::cout << root->_val << " ";
+
+        if (root->_right != nullptr) {
+            _print(root->_right);
+        }
     }
 
   private:
