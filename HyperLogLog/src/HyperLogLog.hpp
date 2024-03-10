@@ -407,73 +407,71 @@ class HyperLogLog {
 
         end_iterator = _registers.end();
     }
+    //----------------------------
+    // 稀疏型的相关函数
+    // 设置 Val 操作码
+    inline void SetSparseVal(std::vector<uint8_t>::iterator iter, uint8_t val,
+                             int len) {
+        // 把val设置进对应的位置，同时设置 val 标识
+        *iter = ((val)-1) << 2 | ((len - 1)) | ValueOpcodeBit;
+    }
 
-}
+    inline void SetSparseZero(std::vector<uint8_t>::iterator iter, int len) {
+        *iter = len - 1;
+    }
 
-//----------------------------
-// 稀疏型的相关函数
-// 设置 Val 操作码
-inline void
-SetSparseVal(std::vector<uint8_t>::iterator iter, uint8_t val, int len) {
-    // 把val设置进对应的位置，同时设置 val 标识
-    *iter = ((val)-1) << 2 | ((len - 1)) | ValueOpcodeBit;
-}
+    inline void SetSparseXZero(std::vector<uint8_t>::iterator iter, int len) {
+        len--;
+        // 设置第一个字节并设置 xzero 标识
+        *iter = len >> 8 | XZeroOpcodeBit;
+        // 设置第二个字节
+        *(iter + 1) = len & 0xff;
+    }
 
-inline void SetSparseZero(std::vector<uint8_t>::iterator iter, int len) {
-    *iter = len - 1;
-}
+    // 检查操作码是否表示一个零序列
+    inline bool IsZeroOpcode(std::vector<uint8_t>::const_iterator iter) {
+        return ((*iter) & 0xc0) == 0;  // 检查最高两位是否为00，表示一个零序列
+    }
 
-inline void SetSparseXZero(std::vector<uint8_t>::iterator iter, int len) {
-    len--;
-    // 设置第一个字节并设置 xzero 标识
-    *iter = len >> 8 | XZeroOpcodeBit;
-    // 设置第二个字节
-    *(iter + 1) = len & 0xff;
-}
+    // 检查操作码是否表示一个扩展的零序列
+    inline bool IsXZeroOpcode(std::vector<uint8_t>::const_iterator iter) {
+        return ((*iter) & 0xc0) ==
+               XZeroOpcodeBit;  // 检查是否为扩展零序列的操作码
+    }
 
-// 检查操作码是否表示一个零序列
-inline bool IsZeroOpcode(std::vector<uint8_t>::const_iterator iter) {
-    return ((*iter) & 0xc0) == 0;  // 检查最高两位是否为00，表示一个零序列
-}
+    // 检查操作码是否表示一个 val
+    inline bool IsValueOpcode(std::vector<uint8_t>::const_iterator iter) {
+        return ((*iter) & ValueOpcodeBit) !=
+               0;  // 检查最高位是否为1，表示一个值操作码
+    }
 
-// 检查操作码是否表示一个扩展的零序列
-inline bool IsXZeroOpcode(std::vector<uint8_t>::const_iterator iter) {
-    return ((*iter) & 0xc0) == XZeroOpcodeBit;  // 检查是否为扩展零序列的操作码
-}
+    // ZERO操作码中获取零序列的长度
+    inline long GetZeroLength(std::vector<uint8_t>::const_iterator iter) {
+        return ((*iter) & 0x3f) +
+               1;  // 获取操作码的低6位，左移8位后与下一个字节组合，再加1，表示扩展零序列的长度
+    }
 
-// 检查操作码是否表示一个 val
-inline bool IsValueOpcode(std::vector<uint8_t>::const_iterator iter) {
-    return ((*iter) & ValueOpcodeBit) !=
-           0;  // 检查最高位是否为1，表示一个值操作码
-}
+    // 从XZERO操作码中获取扩展零序列的长度
+    inline long GetXZeroLength(std::vector<uint8_t>::const_iterator iter) {
+        return ((((*iter) & 0x3f) << 8) | *(std::next(iter))) +
+               1;  // 获取操作码的低6位，左移8位后与下一个字节组合，再加1，表示扩展零序列的长度
+    }
 
-// ZERO操作码中获取零序列的长度
-inline long GetZeroLength(std::vector<uint8_t>::const_iterator iter) {
-    return ((*iter) & 0x3f) +
-           1;  // 获取操作码的低6位，左移8位后与下一个字节组合，再加1，表示扩展零序列的长度
-}
+    // 从VAL操作码中获取值
+    inline long GetValueFromOpcode(std::vector<uint8_t>::const_iterator iter) {
+        return (((*iter) >> 2) & 0x1f) +
+               1;  // 获取操作码的第3到第7位并加1，表示值
+    }
 
-// 从XZERO操作码中获取扩展零序列的长度
-inline long GetXZeroLength(std::vector<uint8_t>::const_iterator iter) {
-    return ((((*iter) & 0x3f) << 8) | *(std::next(iter))) +
-           1;  // 获取操作码的低6位，左移8位后与下一个字节组合，再加1，表示扩展零序列的长度
-}
+    // 从XZERO操作码中获取扩展零序列的长度
+    inline long GetValueLength(std::vector<uint8_t>::const_iterator iter) {
+        return ((*iter) & 0x3) + 1;  // 获取操作码的低2位并加1，表示值的序列长度
+    }
 
-// 从VAL操作码中获取值
-inline long GetValueFromOpcode(std::vector<uint8_t>::const_iterator iter) {
-    return (((*iter) >> 2) & 0x1f) + 1;  // 获取操作码的第3到第7位并加1，表示值
-}
+    //----------------------------
 
-// 从XZERO操作码中获取扩展零序列的长度
-inline long GetValueLength(std::vector<uint8_t>::const_iterator iter) {
-    return ((*iter) & 0x3) + 1;  // 获取操作码的低2位并加1，表示值的序列长度
-}
-
-//----------------------------
-
-private:
-HLLHeader _head;
-std::vector<uint8_t> _registers;
-}
-;
+   private:
+    HLLHeader _head;
+    std::vector<uint8_t> _registers;
+};
 #endif  // !__HYPER_LOG_LOG_HPP__
