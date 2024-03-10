@@ -14,7 +14,7 @@ enum class HLLSetResult {
     NOUPDATE,
     PROMOTIONREQUIRED,
     INVALIDFORMAT,
-    ERROR  // 其他错误
+    ERROR // 其他错误
 };
 
 struct HLLHeader {
@@ -30,7 +30,7 @@ struct HLLHeader {
 };
 
 class HyperLogLog {
-   public:
+  public:
     static constexpr int Precision = 14;
     static constexpr int QBits = 64 - Precision;
     static constexpr int Registers = 1 << Precision;
@@ -45,18 +45,18 @@ class HyperLogLog {
     static constexpr int MaxEncoding = 1;
     //-------------------------------------
     // 稀疏型相关变量
-    static constexpr uint8_t XZeroOpcodeBit = 0x40;  // 01000000
-    static constexpr uint8_t ValueOpcodeBit = 0x80;  // 10000000
+    static constexpr uint8_t XZeroOpcodeBit = 0x40; // 01000000
+    static constexpr uint8_t ValueOpcodeBit = 0x80; // 10000000
     static constexpr int ValMaxValue = 32;
     static constexpr int ZeroMaxLen = 64;
     static constexpr int XZeroMaxLen = 16384;
     // 配置转换密集型的预设值，后续改成可配
     static constexpr size_t MaxBytesForSparseRepresentation = 3000;
     //-------------------------------------
-    static constexpr double AlphaInf = 0.721347520444481703680;  // 误差校正常数
+    static constexpr double AlphaInf = 0.721347520444481703680; // 误差校正常数
     static const char *InvalidHllError;
 
-   public:
+  public:
     HyperLogLog() : _registers() {}
 
     void Init() {
@@ -83,16 +83,16 @@ class HyperLogLog {
 
     int Add(const std::string &str) {
         switch (_head._data_type) {
-            case DenseEncoding:
-                return AddToDense(str);
-            case SparseEncoding:
-                return AddToSparse(str);
-            default:
-                return -1;
+        case DenseEncoding:
+            return AddToDense(str);
+        case SparseEncoding:
+            return AddToSparse(str);
+        default:
+            return -1;
         }
     }
 
-   private:
+  private:
     //-------------------------
     // 哈希算法相关函数
     // 判断系统是否为小端字节序
@@ -110,21 +110,21 @@ class HyperLogLog {
 
     // MurmurHash64A 实现，包含字节序和对齐处理
     uint64_t MurmurHash64A(const void *key, int len, uint32_t seed) {
-        const uint64_t m = 0xc6a4a7935bd1e995ull;  // 哈希函数的乘数
-        const int r = 47;  // 使用种子和长度初始化哈希值
-        uint64_t h = seed ^ (len * m);  // 使用种子和长度初始化哈希值
+        const uint64_t m = 0xc6a4a7935bd1e995ull; // 哈希函数的乘数
+        const int r = 47; // 使用种子和长度初始化哈希值
+        uint64_t h = seed ^ (len * m); // 使用种子和长度初始化哈希值
 
         const uint8_t *data =
-            reinterpret_cast<const uint8_t *>(key);  // 将键转换为字节序列
-        const int nblocks = len / 8;  // 计算完整8字节块的数量
+            reinterpret_cast<const uint8_t *>(key); // 将键转换为字节序列
+        const int nblocks = len / 8; // 计算完整8字节块的数量
 
         // 处理每个8字节块
         for (int i = 0; i < nblocks; i++) {
-            uint64_t k = SafeLoad(data);  // 安全加载8字节数据
+            uint64_t k = SafeLoad(data); // 安全加载8字节数据
             data += 8;
 
             if (!IsLittleEndian()) {
-                k = __builtin_bswap64(k);  // 如果是大端系统，交换字节序
+                k = __builtin_bswap64(k); // 如果是大端系统，交换字节序
             }
 
             k *= m;
@@ -138,24 +138,24 @@ class HyperLogLog {
         // 处理剩余字节
         uint64_t tail = 0;
         switch (len & 7) {
-            case 7:
-                tail ^= uint64_t(data[6]) << 48;
-            case 6:
-                tail ^= uint64_t(data[5]) << 40;
-            case 5:
-                tail ^= uint64_t(data[4]) << 32;
-            case 4:
-                tail ^= uint64_t(data[3]) << 24;
-            case 3:
-                tail ^= uint64_t(data[2]) << 16;
-            case 2:
-                tail ^= uint64_t(data[1]) << 8;
-            case 1:
-                tail ^= uint64_t(data[0]);
-                tail *= m;
-                tail ^= tail >> r;
-                tail *= m;
-                h ^= tail;
+        case 7:
+            tail ^= uint64_t(data[6]) << 48;
+        case 6:
+            tail ^= uint64_t(data[5]) << 40;
+        case 5:
+            tail ^= uint64_t(data[4]) << 32;
+        case 4:
+            tail ^= uint64_t(data[3]) << 24;
+        case 3:
+            tail ^= uint64_t(data[2]) << 16;
+        case 2:
+            tail ^= uint64_t(data[1]) << 8;
+        case 1:
+            tail ^= uint64_t(data[0]);
+            tail *= m;
+            tail ^= tail >> r;
+            tail *= m;
+            h ^= tail;
         }
 
         // 最终处理
@@ -198,11 +198,11 @@ class HyperLogLog {
         hash >>= Precision;
         hash |=
             (1ULL
-             << QBits);  // 确保哈希值的QBits+1位是“1”，这样在寻找连续的零时循环一定会终止
+             << QBits); // 确保哈希值的QBits+1位是“1”，这样在寻找连续的零时循环一定会终止
 
         std::uint64_t bit =
-            1;  // 使用bit（从1开始）检查每一位，直到找到一个为“1”的位
-        int count = 1;  // 包括了所有连续的零以及跟随的一个“1”
+            1; // 使用bit（从1开始）检查每一位，直到找到一个为“1”的位
+        int count = 1; // 包括了所有连续的零以及跟随的一个“1”
         while ((hash & bit) == 0) {
             count++;
             bit <<= 1;
@@ -220,47 +220,47 @@ class HyperLogLog {
         HLLSetResult result = SetSparseRegister(index, count);
 
         switch (result) {
-            case HLLSetResult::SUCCESS:
-                // 处理成功的情况
-                break;
-            case HLLSetResult::NOUPDATE:
-                // 处理没有更新的情况
-                break;
-            case HLLSetResult::PROMOTIONREQUIRED:
-                // 处理需要提升类型的情况
-                break;
-            case HLLSetResult::INVALIDFORMAT:
-                // 处理无效格式的情况
-                break;
-            case HLLSetResult::ERROR:
-                // 处理错误的情况
-                break;
-            default:
-                // 处理其他可能的未知情况
-                break;
+        case HLLSetResult::SUCCESS:
+            // 处理成功的情况
+            break;
+        case HLLSetResult::NOUPDATE:
+            // 处理没有更新的情况
+            break;
+        case HLLSetResult::PROMOTIONREQUIRED:
+            // 处理需要提升类型的情况
+            break;
+        case HLLSetResult::INVALIDFORMAT:
+            // 处理无效格式的情况
+            break;
+        case HLLSetResult::ERROR:
+            // 处理错误的情况
+            break;
+        default:
+            // 处理其他可能的未知情况
+            break;
         }
 
         return 0;
     }
 
     HLLSetResult SetSparseRegister(long index, uint8_t count) {
-        uint8_t current_count;  // 当前寄存器的计数值
+        uint8_t current_count; // 当前寄存器的计数值
         std::vector<uint8_t>
-            *sparse_representation;  // 指向稀疏表示的vector的指针
+            *sparse_representation; // 指向稀疏表示的vector的指针
         // vector结束位置的迭代器
         std::vector<uint8_t>::iterator end_iterator = _registers.end();
         // 当前处理位置的迭代器
         std::vector<uint8_t>::iterator current_iterator = _registers.begin();
         std::vector<uint8_t>::iterator previous_opcode =
-            _registers.end();  // 指向下一个操作码的迭代器
+            _registers.end(); // 指向下一个操作码的迭代器
         std::vector<uint8_t>::iterator next_opcode =
-            _registers.end();  // 指向下一个操作码的迭代器
-        long first_index = 0;  //  当前操作码涵盖的第一个寄存器的索引
+            _registers.end(); // 指向下一个操作码的迭代器
+        long first_index = 0; //  当前操作码涵盖的第一个寄存器的索引
         long span_length = 0;         // 当前操作码涵盖的寄存器数量
         bool is_zero_opcode = false;  // 当前是否处理的是ZERO操作码
-        bool is_xzero_opcode = false;  // 当前是否处理的是XZERO操作码
-        bool is_value_opcode = false;  // 当前是否处理的是VAL操作码
-        long run_length = 0;           // 当前操作码的运行长度
+        bool is_xzero_opcode = false; // 当前是否处理的是XZERO操作码
+        bool is_value_opcode = false; // 当前是否处理的是VAL操作码
+        long run_length = 0;          // 当前操作码的运行长度
 
         // 如果 count 大于 valMax的话表示无法存储下了
         // 需要替换成密集型存储
@@ -339,7 +339,7 @@ class HyperLogLog {
         std::vector<uint8_t> new_sequence(5);
         auto sequence_iterator = new_sequence.begin();
 
-        int last = first_inde + span_length - 1;
+        int last = first_index + span_length - 1;
         long length = 0;
 
         if (is_zero_opcode || is_xzero_opcode) {
@@ -359,7 +359,7 @@ class HyperLogLog {
 
             if (index != last) {
                 length = last - index;
-                if (length > ZeroMaxLen()) {
+                if (length > ZeroMaxLen) {
                     SetSparseXZero(sequence_iterator, length);
                     sequence_iterator += 2;
                 } else {
@@ -430,48 +430,48 @@ class HyperLogLog {
 
     // 检查操作码是否表示一个零序列
     inline bool IsZeroOpcode(std::vector<uint8_t>::const_iterator iter) {
-        return ((*iter) & 0xc0) == 0;  // 检查最高两位是否为00，表示一个零序列
+        return ((*iter) & 0xc0) == 0; // 检查最高两位是否为00，表示一个零序列
     }
 
     // 检查操作码是否表示一个扩展的零序列
     inline bool IsXZeroOpcode(std::vector<uint8_t>::const_iterator iter) {
         return ((*iter) & 0xc0) ==
-               XZeroOpcodeBit;  // 检查是否为扩展零序列的操作码
+               XZeroOpcodeBit; // 检查是否为扩展零序列的操作码
     }
 
     // 检查操作码是否表示一个 val
     inline bool IsValueOpcode(std::vector<uint8_t>::const_iterator iter) {
         return ((*iter) & ValueOpcodeBit) !=
-               0;  // 检查最高位是否为1，表示一个值操作码
+               0; // 检查最高位是否为1，表示一个值操作码
     }
 
     // ZERO操作码中获取零序列的长度
     inline long GetZeroLength(std::vector<uint8_t>::const_iterator iter) {
         return ((*iter) & 0x3f) +
-               1;  // 获取操作码的低6位，左移8位后与下一个字节组合，再加1，表示扩展零序列的长度
+               1; // 获取操作码的低6位，左移8位后与下一个字节组合，再加1，表示扩展零序列的长度
     }
 
     // 从XZERO操作码中获取扩展零序列的长度
     inline long GetXZeroLength(std::vector<uint8_t>::const_iterator iter) {
         return ((((*iter) & 0x3f) << 8) | *(std::next(iter))) +
-               1;  // 获取操作码的低6位，左移8位后与下一个字节组合，再加1，表示扩展零序列的长度
+               1; // 获取操作码的低6位，左移8位后与下一个字节组合，再加1，表示扩展零序列的长度
     }
 
     // 从VAL操作码中获取值
     inline long GetValueFromOpcode(std::vector<uint8_t>::const_iterator iter) {
         return (((*iter) >> 2) & 0x1f) +
-               1;  // 获取操作码的第3到第7位并加1，表示值
+               1; // 获取操作码的第3到第7位并加1，表示值
     }
 
     // 从XZERO操作码中获取扩展零序列的长度
     inline long GetValueLength(std::vector<uint8_t>::const_iterator iter) {
-        return ((*iter) & 0x3) + 1;  // 获取操作码的低2位并加1，表示值的序列长度
+        return ((*iter) & 0x3) + 1; // 获取操作码的低2位并加1，表示值的序列长度
     }
 
     //----------------------------
 
-   private:
+  private:
     HLLHeader _head;
     std::vector<uint8_t> _registers;
 };
-#endif  // !__HYPER_LOG_LOG_HPP__
+#endif // !__HYPER_LOG_LOG_HPP__
