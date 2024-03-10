@@ -19,14 +19,14 @@ enum class HLLSetResult {
 
 struct HLLHeader {
     HLLHeader()
-        : _verification_code{'H', 'Y', 'L', 'L'}, _data_type(0), _cache(0) {
+        : _verification_code{'H', 'Y', 'L', 'L'}, _data_type(0), _cache{0} {
         std::fill(std::begin(_future_use), std::end(_future_use), 0);
     }
 
     char _verification_code[4];
     uint8_t _data_type;
     uint8_t _future_use[3];
-    uint64_t _cache;
+    uint64_t _cache[8];
 };
 
 class HyperLogLog {
@@ -38,27 +38,29 @@ class HyperLogLog {
     static constexpr int BitCount = 6;
     static constexpr int RegisterMax = (1 << BitCount) - 1;
     static constexpr size_t HeaderSize = sizeof(HLLHeader);
-    static constexpr size_t DenseSize =
-        (HeaderSize + ((Registers * BitCount + 7) / 8));
+    static constexpr size_t DenseSize = (Registers * BitCount + 7) / 8;
     static constexpr int DenseEncoding = 0;
     static constexpr int SparseEncoding = 1;
     static constexpr int MaxEncoding = 1;
     //-------------------------------------
     // 稀疏型相关变量
+    static constexpr int OK = 0;
+    static constexpr int ERR = -1;
     static constexpr uint8_t XZeroOpcodeBit = 0x40;  // 01000000
     static constexpr uint8_t ValueOpcodeBit = 0x80;  // 10000000
     static constexpr int ValMaxValue = 32;
     static constexpr int ValMaxLen = 4;
     static constexpr int ZeroMaxLen = 64;
-    static constexpr int XZeroMaxLen = 16384;
+    // static constexpr int XZeroMaxLen = 16384;
+    int XZeroMaxLen = 16384;
     // 配置转换密集型的预设值，后续改成可配
     static constexpr size_t MaxBytesForSparseRepresentation = 3000;
     //-------------------------------------
     static constexpr double AlphaInf = 0.721347520444481703680;  // 误差校正常数
-    static const char *InvalidHllError;
+    // static const char *InvalidHllError;
 
    public:
-    HyperLogLog() : _registers() {}
+    HyperLogLog() { Init(); }
 
     void Init() {
         // 默认使用稀疏表示
@@ -94,6 +96,13 @@ class HyperLogLog {
     }
 
    private:
+    // 标记缓存的基数为失效状态
+    inline void MarkCacheAsInvalid() { _head._cache[7] |= (1 << 7); }
+
+    // 检查缓存的基数是否有效
+    inline bool IsCacheValid() const {
+        return (_head._cache[7] & (1 << 7)) == 0;
+    }
     //-------------------------
     // 哈希算法相关函数
     // 判断系统是否为小端字节序
@@ -212,7 +221,7 @@ class HyperLogLog {
         return count;
     }
 
-    int AddToDense(const std::string &str) {}
+    int AddToDense(const std::string &str) { return 0; }
 
     int AddToSparse(const std::string &str) {
         long index = 0;
@@ -229,7 +238,7 @@ class HyperLogLog {
                 break;
             case HLLSetResult::PROMOTIONREQUIRED:
                 // 处理需要提升类型的情况
-                break;
+                return ConvertHllFromSparseToDense();
             case HLLSetResult::INVALIDFORMAT:
                 // 处理无效格式的情况
                 break;
@@ -242,6 +251,59 @@ class HyperLogLog {
         }
 
         return 0;
+    }
+
+    int ConvertHllFromSparseToDense() {
+        if (_head._data_type == DenseEncoding) {
+            // 已经是密集型就不需要转换
+            return OK;
+        }
+
+        std::vector<uint8_t> dense(DenseSize, 0);
+        int index = 0;
+        int run_len = 0;
+        int reg_val = 0;
+
+        auto cur = _registers.begin();
+        while (cur < _registers.end()) {
+            if (IsZeroOpcode(cur)) {
+                run_len = GetZeroLength(cur);
+                index += run_len;
+                cur++;
+            } else if (IsXZeroOpcode(cur)) {
+                run_len = GetXZeroLength(cur);
+                index += run_len;
+                cur += 2;
+            } else {
+                run_len = GetValueLength(cur);
+                reg_val = GetValueFromOpcode(cur);
+
+                // 如果大于16384说明被损坏了
+                if (run_len + index > Registers) {
+                    break;
+                }
+
+                while (run_len--) {
+                    SetRegisterValue(dense.begin(), index, reg_val);
+                    index++;
+                }
+
+                cur++;
+            }
+        }
+
+        // 转换失败
+        if (index != Registers) {
+            return ERR;  // 稀疏形被损坏
+        }
+
+        _registers = std::move((dense));
+
+        // 设置缓存无效
+        MarkCacheAsInvalid();
+        _head._data_type = DenseEncoding;
+
+        return OK;
     }
 
     HLLSetResult SetSparseRegister(long index, uint8_t count) {
@@ -262,11 +324,10 @@ class HyperLogLog {
         bool is_xzero_opcode = false;  // 当前是否处理的是XZERO操作码
         bool is_value_opcode = false;  // 当前是否处理的是VAL操作码
         long run_length = 0;           // 当前操作码的运行长度
-        int
 
-            // 如果 count 大于 valMax的话表示无法存储下了
-            // 需要替换成密集型存储
-            if (count > ValMaxValue) {
+        // 如果 count 大于 valMax的话表示无法存储下了
+        // 需要替换成密集型存储
+        if (count > ValMaxValue) {
             return HLLSetResult::PROMOTIONREQUIRED;
         }
 
@@ -411,15 +472,17 @@ class HyperLogLog {
             return HLLSetResult::PROMOTIONREQUIRED;
         }
 
-        _registers.resize(_registers.size() + delta_len);
+        // _registers.resize(_registers.size() + delta_len);
         // 移动旧序列后的数据以为新序列腾出空间
-        if (delta_len && next_opcode != end_iterator) {
-            std::move_backward(next_opcode, end_iterator,
-                               next_opcode + delta_len);
-        }
+        // if (delta_len && next_opcode != end_iterator) {
+        //     std::move_backward(next_opcode, end_iterator,
+        //                        next_opcode + delta_len);
+        // }
 
-        std::copy(new_sequence.begin(), new_sequence.begin() + delta_len,
-                  current_iterator);
+        // std::copy(new_sequence.begin(), new_sequence.begin() + delta_len,
+        //           current_iterator);
+        _registers.insert(current_iterator, new_sequence.begin(),
+                          new_sequence.begin() + delta_len);
 
         end_iterator = _registers.end();
 
@@ -455,7 +518,7 @@ class HyperLogLog {
 
             // 检查是否有两个相邻的val
             auto next_it = cur_it + 1;
-            if (next_it < end_it && IsValueOpcode(next_it)) {
+            if (next_it < _registers.end() && IsValueOpcode(next_it)) {
                 int val_cur = GetValueFromOpcode(cur_it);
                 int val_next = GetValueFromOpcode(next_it);
 
@@ -478,6 +541,7 @@ class HyperLogLog {
         }
 
         // 设置缓存无效
+        MarkCacheAsInvalid();
     }
 
     inline void SetSparseXZero(std::vector<uint8_t>::iterator iter, int len) {
@@ -523,12 +587,50 @@ class HyperLogLog {
                1;  // 获取操作码的第3到第7位并加1，表示值
     }
 
-    // 从XZERO操作码中获取扩展零序列的长度
+    // 从val操作码中获取长度
     inline long GetValueLength(std::vector<uint8_t>::const_iterator iter) {
         return ((*iter) & 0x3) + 1;  // 获取操作码的低2位并加1，表示值的序列长度
     }
 
     //----------------------------
+
+    // 密集型相关函数
+    //------------------------
+    // 获取指定寄存器的值
+    unsigned long GetRegisterValue(std::vector<uint8_t>::const_iterator iter,
+                                   unsigned long register_index) {
+        auto tmp_iter = iter;
+        std::advance(tmp_iter,
+                     register_index * BitCount / 8);  // 移动到正确的字节位置
+        unsigned long byte_offset = register_index * BitCount % 8;
+        unsigned long next_byte_offset = 8 - byte_offset;
+
+        unsigned long value = *tmp_iter;
+        value |= static_cast<unsigned long>(*(std::next(tmp_iter, 1)))
+                 << 8;  // 获取下一个字节的值
+        value = (value >> byte_offset) & RegisterMax;  // 提取正确的寄存器值
+
+        return value;
+    }
+
+    // 设置指定寄存器的值
+    void SetRegisterValue(std::vector<uint8_t>::iterator iter,
+                          unsigned long register_index, unsigned long value) {
+        auto tmp_iter = iter;
+        std::advance(tmp_iter,
+                     register_index * BitCount / 8);  // 移动到正确的字节位置
+        unsigned long byte_offset = register_index * BitCount % 8;
+        unsigned long next_byte_offset = 8 - byte_offset;
+
+        // 清除当前字节和下一个字节中对应的旧寄存器值
+        *tmp_iter &= ~(RegisterMax << byte_offset);
+        *(std::next(tmp_iter, 1)) &= ~(RegisterMax >> next_byte_offset);
+
+        // 设置新的寄存器值
+        *tmp_iter |= (value & RegisterMax) << byte_offset;
+        *(std::next(tmp_iter, 1)) |= (value & RegisterMax) >> next_byte_offset;
+    }
+    //------------------------
 
    private:
     HLLHeader _head;
