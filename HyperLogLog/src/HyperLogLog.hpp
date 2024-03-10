@@ -120,7 +120,8 @@ class HyperLogLog {
 
     // MurmurHash64A 实现，包含字节序和对齐处理
     uint64_t MurmurHash64A(const void *key, int len, uint32_t seed) {
-        const uint64_t m = 0xc6a4a7935bd1e995ull;  // 哈希函数的乘数
+        // const uint64_t m = 0xc6a4a7935bd1e995ull;  // 哈希函数的乘数
+        const uint64_t m = 0xc6a4a7935bd1e995;
         const int r = 47;  // 使用种子和长度初始化哈希值
         uint64_t h = seed ^ (len * m);  // 使用种子和长度初始化哈希值
 
@@ -175,6 +176,64 @@ class HyperLogLog {
 
         return h;
     }
+    uint64_t MurmurHash64B(const void *key, int len, uint32_t seed) {
+        const uint64_t m = 0xc6a4a7935bd1e995;
+        const int r = 47;
+        uint64_t h = seed ^ (len * m);
+        const uint8_t *data = (const uint8_t *)key;
+        const uint8_t *end = data + (len - (len & 7));
+
+        while (data != end) {
+            uint64_t k;
+
+#if (BYTE_ORDER == LITTLE_ENDIAN)
+#ifdef USE_ALIGNED_ACCESS
+            memcpy(&k, data, sizeof(uint64_t));
+#else
+            k = *((uint64_t *)data);
+#endif
+#else
+            k = (uint64_t)data[0];
+            k |= (uint64_t)data[1] << 8;
+            k |= (uint64_t)data[2] << 16;
+            k |= (uint64_t)data[3] << 24;
+            k |= (uint64_t)data[4] << 32;
+            k |= (uint64_t)data[5] << 40;
+            k |= (uint64_t)data[6] << 48;
+            k |= (uint64_t)data[7] << 56;
+#endif
+
+            k *= m;
+            k ^= k >> r;
+            k *= m;
+            h ^= k;
+            h *= m;
+            data += 8;
+        }
+
+        switch (len & 7) {
+            case 7:
+                h ^= (uint64_t)data[6] << 48; /* fall-thru */
+            case 6:
+                h ^= (uint64_t)data[5] << 40; /* fall-thru */
+            case 5:
+                h ^= (uint64_t)data[4] << 32; /* fall-thru */
+            case 4:
+                h ^= (uint64_t)data[3] << 24; /* fall-thru */
+            case 3:
+                h ^= (uint64_t)data[2] << 16; /* fall-thru */
+            case 2:
+                h ^= (uint64_t)data[1] << 8; /* fall-thru */
+            case 1:
+                h ^= (uint64_t)data[0];
+                h *= m; /* fall-thru */
+        };
+
+        h ^= h >> r;
+        h *= m;
+        h ^= h >> r;
+        return h;
+    }
     //-------------------------
 
     // 稀疏型，检查容量是否足够
@@ -200,7 +259,10 @@ class HyperLogLog {
                                         long *regp) {
         const std::uint64_t HLL_P_MASK = (1ULL << Precision) - 1;
 
-        std::uint64_t hash = MurmurHash64A(
+        // std::uint64_t hash = MurmurHash64A(
+        //     reinterpret_cast<const unsigned char *>(element.c_str()),
+        //     element.size(), 0xadc83b19ULL);
+        std::uint64_t hash = MurmurHash64B(
             reinterpret_cast<const unsigned char *>(element.c_str()),
             element.size(), 0xadc83b19ULL);
         // MurmurHash64A(element.data(), element.size(), 0xadc83b19ULL);
@@ -318,6 +380,11 @@ class HyperLogLog {
             _registers.end();  // 指向下一个操作码的迭代器
         std::vector<uint8_t>::iterator next_opcode =
             _registers.end();  // 指向下一个操作码的迭代器
+        int cur_index = 0;
+        int next_index = -1;
+        int prev_index = -1;
+        int end_index = -1;
+
         long first_index = 0;  //  当前操作码涵盖的第一个寄存器的索引
         long span_length = 0;         // 当前操作码涵盖的寄存器数量
         bool is_zero_opcode = false;  // 当前是否处理的是ZERO操作码
@@ -339,15 +406,17 @@ class HyperLogLog {
         previous_opcode = end_iterator;
         next_opcode = end_iterator;
 
-        while (current_iterator < end_iterator) {
+        end_index = _registers.size() + 1;
+
+        while (cur_index < end_index) {
             long opcode_length = 1;
 
-            if (IsZeroOpcode(current_iterator)) {
-                span_length = GetZeroLength(current_iterator);
-            } else if (IsValueOpcode(current_iterator)) {
-                span_length = GetValueLength(current_iterator);
+            if (IsZeroOpcode(_registers.begin() + cur_index)) {
+                span_length = GetZeroLength(_registers.begin() + cur_index);
+            } else if (IsValueOpcode(_registers.begin() + cur_index)) {
+                span_length = GetValueLength(_registers.begin() + cur_index);
             } else {
-                span_length = GetXZeroLength(current_iterator);
+                span_length = GetXZeroLength(_registers.begin() + cur_index);
                 opcode_length = 2;
             }
 
@@ -355,39 +424,42 @@ class HyperLogLog {
             if (index <= first_index + span_length - 1) {
                 break;
             }
-            previous_opcode = current_iterator;
-            current_iterator += opcode_length;
+            // previous_opcode = current_iterator;
+            // current_iterator += opcode_length;
+            prev_index = cur_index;
+            cur_index += opcode_length;
             first_index += span_length;
         }
 
         // span一定不可能为0
-        if (!span_length || current_iterator >= end_iterator) {
+        if (!span_length || cur_index >= end_index) {
             return HLLSetResult::INVALIDFORMAT;
         }
 
-        next_opcode = IsXZeroOpcode(current_iterator) ? current_iterator + 2
-                                                      : current_iterator + 1;
+        next_index = IsXZeroOpcode(_registers.begin() + cur_index)
+                         ? cur_index + 2
+                         : cur_index + 1;
 
-        if (next_opcode >= end_iterator) {
-            next_opcode = end_iterator;
+        if (next_index >= end_index) {
+            next_index = end_index;
         }
 
-        if (IsZeroOpcode(current_iterator)) {
+        if (IsZeroOpcode(_registers.begin() + cur_index)) {
             is_zero_opcode = true;
-            run_length = GetZeroLength(current_iterator);
-        } else if (IsXZeroOpcode(current_iterator)) {
+            run_length = GetZeroLength(_registers.begin() + cur_index);
+        } else if (IsXZeroOpcode(_registers.begin() + cur_index)) {
             is_xzero_opcode = true;
-            run_length = GetXZeroLength(current_iterator);
+            run_length = GetXZeroLength(_registers.begin() + cur_index);
         } else {
             is_value_opcode = true;
-            run_length = GetValueLength(current_iterator);
+            run_length = GetValueLength(_registers.begin() + cur_index);
         }
 
         // Step 2: 循环后的处理逻辑
         // 处理不同的情况以原地更新数据结构而不是从头开始生成
         // 如果是VAL操作码且已经设置了大于等于我们的计数值的值，则不需要更新。
         if (is_value_opcode) {
-            current_count = GetValueFromOpcode(current_iterator);
+            current_count = GetValueFromOpcode(_registers.begin() + cur_index);
 
             // 不需要更新
             if (current_count >= count) {
@@ -396,9 +468,9 @@ class HyperLogLog {
 
             // 需要更新
             if (run_length == 1) {
-                SetSparseVal(current_iterator, count, 1);
+                SetSparseVal(_registers.begin() + cur_index, count, 1);
 
-                MergeAdjacentValues(previous_opcode);
+                MergeAdjacentValues(prev_index);
                 return HLLSetResult::NOUPDATE;
             }
         }
@@ -406,9 +478,9 @@ class HyperLogLog {
         // 另一个易于处理的情况是长度为1的ZERO操作码。
         // 我们可以直接用我们的值和长度1替换它为VAL操作码。
         if (is_zero_opcode && run_length == 1) {
-            SetSparseVal(current_iterator, count, 1);
+            SetSparseVal(_registers.begin() + cur_index, count, 1);
 
-            MergeAdjacentValues(previous_opcode);
+            MergeAdjacentValues(prev_index);
             return HLLSetResult::NOUPDATE;
         }
 
@@ -444,7 +516,7 @@ class HyperLogLog {
                 }
             }
         } else {
-            int cur_val = GetValueFromOpcode(current_iterator);
+            int cur_val = GetValueFromOpcode(_registers.begin() + cur_index);
 
             if (index != first_index) {
                 length = index - first_index;
@@ -481,12 +553,16 @@ class HyperLogLog {
 
         // std::copy(new_sequence.begin(), new_sequence.begin() + delta_len,
         //           current_iterator);
-        _registers.insert(current_iterator, new_sequence.begin(),
-                          new_sequence.begin() + delta_len);
+
+        auto it_tmp = _registers.begin() + cur_index;
+        for (int i = 0; i < seq_len; i++) {
+            it_tmp = _registers.insert(it_tmp, new_sequence[i]);
+            it_tmp++;
+        }
 
         end_iterator = _registers.end();
 
-        MergeAdjacentValues(previous_opcode);
+        MergeAdjacentValues(prev_index);
 
         return HLLSetResult::NOUPDATE;
     }
@@ -503,8 +579,9 @@ class HyperLogLog {
         *iter = len - 1;
     }
 
-    void MergeAdjacentValues(std::vector<uint8_t>::iterator iter) {
-        auto cur_it = iter != _registers.end() ? iter : _registers.begin();
+    void MergeAdjacentValues(int cur_index) {
+        auto cur_it = cur_index != -1 ? _registers.begin() + cur_index
+                                      : _registers.begin();
         int scan_len = 5;
 
         while (cur_it < _registers.end() && scan_len--) {
