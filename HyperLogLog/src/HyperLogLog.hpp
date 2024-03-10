@@ -50,6 +50,8 @@ class HyperLogLog {
     static constexpr int ValMaxValue = 32;
     static constexpr int ZeroMaxLen = 64;
     static constexpr int XZeroMaxLen = 16384;
+    // 配置转换密集型的预设值，后续改成可配
+    static constexpr size_t MaxBytesForSparseRepresentation = 3000;
     //-------------------------------------
     static constexpr double AlphaInf = 0.721347520444481703680; // 误差校正常数
     static const char *InvalidHllError;
@@ -73,7 +75,7 @@ class HyperLogLog {
         while (aux > 0) {
             int xzero = std::min(aux, XZeroMaxLen);
             // 设置XZERO操作，需要把这个逻辑转换成如何在C++中设置
-            *it++ = ZeroBit | ((xzero - 1) >> 8);
+            *it++ = XZeroBit | ((xzero - 1) >> 8);
             *it++ = (xzero - 1) & 0xFF;
             aux -= xzero;
         }
@@ -165,20 +167,42 @@ class HyperLogLog {
     }
     //-------------------------
 
+    // 稀疏型，检查容量是否足够
+    void EnsureCapacity() {
+        size_t current_size = _registers.size();
+        size_t available = _registers.capacity() - current_size;
+        // 如果当前大小小于最大稀疏表示大小，并且可用空间少于3个字节
+        if (current_size < MaxBytesForSparseRepresentation && available < 3) {
+            size_t new_size = current_size + 3;
+            // 贪心策略：如果新的大小小于300，则加倍；否则增加300字节，以避免频繁扩容
+            new_size += std::min(new_size, static_cast<size_t>(300));
+
+            // 如果计算出的新大小超过了最大稀疏表示大小，则调整为最大值
+            if (new_size > MaxBytesForSparseRepresentation) {
+                new_size = MaxBytesForSparseRepresentation;
+            }
+
+            _registers.resize(new_size);
+        }
+    }
+
     uint8_t CalculateZeroBitRunAndIndex(const std::string &element,
                                         long *regp) {
         const std::uint64_t HLL_P_MASK = (1ULL << Precision) - 1;
 
-        std::uint64_t hash =
-            MurmurHash64A(reinterpret_cast<unsigned char *>(&element[0]),
-                          element.size(), seed);
+        std::uint64_t hash = MurmurHash64A(
+            reinterpret_cast<const unsigned char *>(element.c_str()),
+            element.size(), 0xadc83b19ULL);
         // MurmurHash64A(element.data(), element.size(), 0xadc83b19ULL);
         std::uint64_t index = hash & PMask;
         hash >>= Precision;
-        hash |= (1ULL << QBits);
+        hash |=
+            (1ULL
+             << QBits); // 确保哈希值的QBits+1位是“1”，这样在寻找连续的零时循环一定会终止
 
-        std::uint64_t bit = 1;
-        int count = 1; // 初始化成1, 防止死循环
+        std::uint64_t bit =
+            1; // 使用bit（从1开始）检查每一位，直到找到一个为“1”的位
+        int count = 1; // 包括了所有连续的零以及跟随的一个“1”
         while ((hash & bit) == 0) {
             count++;
             bit <<= 1;
@@ -189,20 +213,84 @@ class HyperLogLog {
 
     int AddToDense(const std::string &str) {}
 
-    int AddToSparse(const std::string &str) {}
+    int AddToSparse(const std::string &str) {
+        long index = 0;
+        uint8_t count = CalculateZeroBitRunAndIndex(str, &index);
+
+        HLLSetResult result = SetSparseRegister(index, count);
+
+        switch (result) {
+        case HLLSetResult::SUCCESS:
+            // 处理成功的情况
+            break;
+        case HLLSetResult::NOUPDATE:
+            // 处理没有更新的情况
+            break;
+        case HLLSetResult::PROMOTIONREQUIRED:
+            // 处理需要提升类型的情况
+            break;
+        case HLLSetResult::INVALIDFORMAT:
+            // 处理无效格式的情况
+            break;
+        case HLLSetResult::ERROR:
+            // 处理错误的情况
+            break;
+        default:
+            // 处理其他可能的未知情况
+            break;
+        }
+
+        return 0;
+    }
+
+    HLLSetResult SetSparseRegister(long index, uint8_t count) {
+        uint8_t current_count; // 当前寄存器的计数值
+        std::vector<uint8_t>
+            *sparse_representation; // 指向稀疏表示的vector的指针
+        // vector结束位置的迭代器
+        std::vector<uint8_t>::iterator end_iterator = _registers.end();
+        // 当前处理位置的迭代器
+        std::vector<uint8_t>::iterator current_iterator = _registers.begin();
+        std::vector<uint8_t>::iterator previous_opcode =
+            _registers.end(); // 指向前一个操作码的迭代器
+        std::vector<uint8_t>::iterator next_opcode =
+            _registers.end(); // 指向下一个操作码的迭代器
+        long first_index = 0; // 当前操作码涵盖的第一个寄存器的索引
+        long span_length = 0;         // 当前操作码涵盖的寄存器数量
+        bool is_zero_opcode = false;  // 当前是否处理的是ZERO操作码
+        bool is_xzero_opcode = false; // 当前是否处理的是XZERO操作码
+        bool is_value_opcode = false; // 当前是否处理的是VAL操作码
+        long run_length = 0;          // 当前操作码的运行长度
+
+        // 如果 count 大于 valMax的话表示无法存储下了
+        // 需要替换成密集型存储
+        if (count > ValMaxValue) {
+            return HLLSetResult::PROMOTIONREQUIRED;
+        }
+
+        EnsureCapacity();
+
+        while (current_iterator < end_iterator) {
+            long opcode_length = 1; // 操作码长度，默认为1
+
+            if ()
+        }
+    }
+
     //----------------------------
     // 稀疏型的相关函数
     // 设置 Val 操作码
-    void SetSparseVal(std::vector<uint8_t>::iterator it, uint8_t val, int len) {
+    inline void SetSparseVal(std::vector<uint8_t>::iterator it, uint8_t val,
+                             int len) {
         // 把val设置进对应的位置，同时设置 val 标识
         *it = ((val)-1) << 2 | ((len - 1)) | ValBit;
     }
 
-    void SetSparseZero(std::vector<uint8_t>::iterator it, int len) {
+    inline void SetSparseZero(std::vector<uint8_t>::iterator it, int len) {
         *it = len - 1;
     }
 
-    void SetSparseXZero(std::vector<uint8_t>::iterator it, int len) {
+    inline void SetSparseXZero(std::vector<uint8_t>::iterator it, int len) {
         len--;
         // 设置第一个字节并设置 xzero 标识
         *it = len >> 8 | XZeroBit;
