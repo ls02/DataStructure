@@ -3,9 +3,11 @@
 #define __HYPER_LOG_LOG_HPP__
 
 #include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 
@@ -41,6 +43,7 @@ class HyperLogLog {
     static constexpr size_t DenseSize = (Registers * BitCount + 7) / 8;
     static constexpr int DenseEncoding = 0;
     static constexpr int SparseEncoding = 1;
+    static constexpr int RAWEncoding = 2;
     static constexpr int MaxEncoding = 1;
     //-------------------------------------
     // 稀疏型相关变量
@@ -91,7 +94,223 @@ class HyperLogLog {
             case SparseEncoding:
                 return AddToSparse(str);
             default:
+                // printf("2");
                 return -1;
+        }
+    }
+
+    int count() {
+        uint64_t card = 0;
+        if (IsCacheValid()) {
+            // printf("1");
+            // 如果缓存数据有效则不用重新计算
+            card = (uint64_t)_head._cache[0];
+            card |= (uint64_t)_head._cache[1] << 8;
+            card |= (uint64_t)_head._cache[2] << 16;
+            card |= (uint64_t)_head._cache[3] << 24;
+            card |= (uint64_t)_head._cache[4] << 32;
+            card |= (uint64_t)_head._cache[5] << 40;
+            card |= (uint64_t)_head._cache[6] << 48;
+            card |= (uint64_t)_head._cache[7] << 56;
+        } else {
+            // 缓存失效需要重新计算
+            bool is_invalid = false;
+
+            card = EstimateCardinality(is_invalid);
+            if (is_invalid) {
+                // printf("缓存失效 err");
+                return -1;
+            }
+
+            _head._cache[0] = card & 0xff;
+            _head._cache[1] = (card >> 8) & 0xff;
+            _head._cache[2] = (card >> 16) & 0xff;
+            _head._cache[3] = (card >> 24) & 0xff;
+            _head._cache[4] = (card >> 32) & 0xff;
+            _head._cache[5] = (card >> 40) & 0xff;
+            _head._cache[6] = (card >> 48) & 0xff;
+            _head._cache[7] = (card >> 56) & 0xff;
+        }
+
+        return card;
+    }
+
+   private:
+    // 统计 count 并且通过调和平均法算出来
+    uint64_t EstimateCardinality(bool &is_invalid) {
+        const double number_of_registers =
+            Registers;  // HLL_REGISTERS 是寄存器的总数。
+        double estimated_cardinality;
+        int index;
+
+        // reghisto 用于存储各个寄存器值的直方图，可以表示 "000...1"
+        // 序列的最大频率。
+        std::vector<int> register_histogram;
+
+        // 根据 HLL 的编码类型计算寄存器直方图。
+        if (_head._data_type == DenseEncoding) {
+            ComputeDenseRegisterHistogram(register_histogram);
+        } else if (_head._data_type == SparseEncoding) {
+            ComputeSparseRegisterHistogram(register_histogram, is_invalid);
+        } else if (_head._data_type == RAWEncoding) {
+            ComputeRawRegisterHistogram(register_histogram);
+        } else {
+            // serverPanic(
+            //     "Unknown HyperLogLog encoding in estimateCardinality()");
+        }
+
+        // 从寄存器直方图估算基数。参考 Otmar Ertl 的论文《HyperLogLog
+        // 的新基数估算算法》。
+        double harmonic_mean =
+            number_of_registers *
+            TauCalculateCorrectionFactor(
+                (number_of_registers - register_histogram[QBits + 1]) /
+                number_of_registers);
+        for (index = QBits; index >= 1; --index) {
+            harmonic_mean += register_histogram[index];
+            harmonic_mean *= 0.5;
+        }
+        harmonic_mean += number_of_registers *
+                         SigmaCalculateHighRangeCorrection(
+                             register_histogram[0] / number_of_registers);
+        estimated_cardinality = llroundl(AlphaInf * number_of_registers *
+                                         number_of_registers / harmonic_mean);
+
+        return (uint64_t)estimated_cardinality;
+    }
+
+    // 计算高基数区间的估算修正
+    double SigmaCalculateHighRangeCorrection(double input) {
+        if (input == 1.0) {
+            // 当输入值为1时，根据定义返回无穷大，因为在理论上，sigma函数在x=1时趋向于无限
+            return std::numeric_limits<double>::infinity();
+        }
+
+        double previous_z;  // 保存前一次迭代计算的z值，用于检查收敛
+        double multiplier = 1.0;  // 乘数，每次迭代翻倍
+        double z = input;         // 当前迭代的z值，初始等于输入值
+
+        do {
+            input *= input;           // 每次迭代将input平方
+            previous_z = z;           // 保存这次迭代前的z值
+            z += input * multiplier;  // 根据sigma函数迭代公式更新z值
+            multiplier += multiplier;  // 更新乘数
+        } while (previous_z != z);  // 当z值不再变化（即收敛）时停止迭代
+
+        return z;  // 返回计算得到的修正值
+    }
+
+    // 计算基数估算中的修正系数
+    double TauCalculateCorrectionFactor(double input) {
+        if (input == 0.0 || input == 1.0) {
+            // 如果输入为0或1，则直接返回0，因为在这些极端情况下，没有修正的必要
+            return 0.0;
+        }
+
+        double previous_value;
+        double correction_factor =
+            1.0 - input;  // 初始化修正因子为 1 减去输入值
+        double scale_factor = 1.0;  // 缩放因子，用于逐步逼近最终结果
+
+        do {
+            input = std::sqrt(input);  // 对输入值取平方根
+            previous_value =
+                correction_factor;  // 保存当前迭代的修正因子值，用于比较
+            scale_factor *= 0.5;  // 更新缩放因子
+            correction_factor -= std::pow(1.0 - input, 2) *
+                                 scale_factor;  // 根据当前输入值更新修正因子
+        } while (
+            previous_value !=
+            correction_factor);  // 如果修正因子没有变化，说明已经收敛到最终结果
+
+        return correction_factor /
+               3.0;  // 返回修正因子除以3，根据算法要求进行最后的调整
+    }
+
+    // 统计 Dense 类型的数量
+    void ComputeDenseRegisterHistogram(std::vector<int> &histogram) {
+        histogram.assign(1 << BitCount, 0);  // 初始化直方图，大小为 64
+
+        if (_registers.size() == Registers && BitCount == 6) {
+            // 使用手动循环展开优化计算直方图
+            for (int j = 0; j < Registers / 16; j++) {
+                for (int k = 0; k < 16; k++) {
+                    int byte_index = j * 12 + (k * 3 / 4);
+                    int bit_shift = (k * 6) % 8;
+                    uint8_t reg_val =
+                        (_registers[byte_index] >> bit_shift) |
+                        (_registers[byte_index + 1] << (8 - bit_shift));
+                    reg_val &= 63;  // 只保留低6位
+                    histogram[reg_val]++;
+                }
+            }
+        } else {
+            // 通用处理路径
+            for (int j = 0; j < Registers; j++) {
+                uint8_t reg_val = GetRegisterValue(_registers.begin(), j);
+                histogram[reg_val]++;
+            }
+        }
+    }
+
+    // 统计 Sparse 类型的数量
+    void ComputeSparseRegisterHistogram(std::vector<int> &histogram,
+                                        bool &is_invalid) {
+        histogram.assign(256, 0);  // 初始化直方图
+        int index = 0;
+        int run_len = 0;
+        int reg_val = 0;
+
+        auto cur = _registers.begin();
+        while (cur != _registers.end()) {
+            if (IsZeroOpcode(cur)) {
+                run_len = GetZeroLength(cur);
+                index += run_len;
+                histogram[0] += run_len;
+                cur++;
+            } else if (IsXZeroOpcode(cur)) {
+                run_len = GetXZeroLength(cur);
+                index += run_len;
+                histogram[0] += run_len;
+                cur += 2;
+            } else {
+                run_len = GetValueLength(cur);
+                reg_val = GetValueFromOpcode(cur);
+                index += run_len;
+                histogram[reg_val] += run_len;
+                cur++;
+            }
+        }
+
+        // 如果不相等说明被损坏了
+        if (index != Registers) {
+            is_invalid = true;
+        }
+    }
+
+    // RAW 作为密集型和稀疏型的一种中间状态，这样的状态用于优化多个key merge
+    // And Count
+    void ComputeRawRegisterHistogram(std::vector<int> &histogram) {
+        // 初始化直方图，大小为 256，覆盖所有可能的 8 位计数值（0-255）
+        histogram.assign(256, 0);
+
+        // 遍历寄存器，每次处理 8 个字节（64位）
+        for (size_t i = 0; i < _registers.size(); i += 8) {
+            uint64_t word;  // 用于临时存储 64 位数据
+            // 将寄存器中的 8 个字节拷贝到 word 中
+            std::memcpy(&word, &_registers[i], sizeof(uint64_t));
+
+            // 如果 word 为 0，意味着这 8 个寄存器的计数值都为 0
+            if (word == 0) {
+                histogram[0] += 8;  // 直接将直方图中计数值为 0 的计数增加 8
+            } else {
+                // 将 word 重新转换为 8 个字节的数组
+                uint8_t *bytes = reinterpret_cast<uint8_t *>(&word);
+                // 遍历这 8 个字节，更新直方图中对应计数值的出现频率
+                for (int j = 0; j < 8; ++j) {
+                    histogram[bytes[j]]++;
+                }
+            }
         }
     }
 
@@ -283,7 +502,11 @@ class HyperLogLog {
         return count;
     }
 
-    int AddToDense(const std::string &str) { return 0; }
+    int AddToDense(const std::string &str) {
+        long index = 0;
+        uint8_t count = CalculateZeroBitRunAndIndex(str, &index);
+        return SetDenseRegister(index, count);
+    }
 
     int AddToSparse(const std::string &str) {
         long index = 0;
@@ -395,6 +618,7 @@ class HyperLogLog {
         // 如果 count 大于 valMax的话表示无法存储下了
         // 需要替换成密集型存储
         if (count > ValMaxValue) {
+            // printf("count 提升\n");
             return HLLSetResult::PROMOTIONREQUIRED;
         }
 
@@ -406,7 +630,7 @@ class HyperLogLog {
         previous_opcode = end_iterator;
         next_opcode = end_iterator;
 
-        end_index = _registers.size() + 1;
+        end_index = _registers.size();
 
         while (cur_index < end_index) {
             long opcode_length = 1;
@@ -433,6 +657,7 @@ class HyperLogLog {
 
         // span一定不可能为0
         if (!span_length || cur_index >= end_index) {
+            // printf("span error\n");
             return HLLSetResult::INVALIDFORMAT;
         }
 
@@ -441,7 +666,7 @@ class HyperLogLog {
                          : cur_index + 1;
 
         if (next_index >= end_index) {
-            next_index = end_index;
+            next_index = -1;
         }
 
         if (IsZeroOpcode(_registers.begin() + cur_index)) {
@@ -470,6 +695,7 @@ class HyperLogLog {
             if (run_length == 1) {
                 SetSparseVal(_registers.begin() + cur_index, count, 1);
 
+                // printf("merge 1合并\n");
                 MergeAdjacentValues(prev_index);
                 return HLLSetResult::NOUPDATE;
             }
@@ -480,6 +706,7 @@ class HyperLogLog {
         if (is_zero_opcode && run_length == 1) {
             SetSparseVal(_registers.begin() + cur_index, count, 1);
 
+            // printf("merge 2合并\n");
             MergeAdjacentValues(prev_index);
             return HLLSetResult::NOUPDATE;
         }
@@ -554,11 +781,41 @@ class HyperLogLog {
         // std::copy(new_sequence.begin(), new_sequence.begin() + delta_len,
         //           current_iterator);
 
-        auto it_tmp = _registers.begin() + cur_index;
-        for (int i = 0; i < seq_len; i++) {
-            it_tmp = _registers.insert(it_tmp, new_sequence[i]);
-            it_tmp++;
+        // if (delta_len && next_index != -1) {
+        //     auto it_tmp = _registers.begin() + cur_index;
+        //     for (int i = 0; i < seq_len; i++) {
+        //         it_tmp = _registers.insert(it_tmp, new_sequence[i]);
+        //         it_tmp++;
+        //     }
+        // } else {
+        //     _registers.resize(_registers.size() + delta_len);
+        //     for (int i = 0; i < seq_len; i++) {
+        //         _registers[cur_index + i] = new_sequence[i];
+        //     }
+        // }
+
+        // if (delta_len && next_index != -1) {
+        //     // 需要保存区间
+        //     for (int i = 0; i < delta_len; i++) {
+        //         _registers.push_back(_registers[next_index + i]);
+        //     }
+        // }
+
+        // // 覆盖区间
+        // for (int i = 0; i < seq_len; i++) {
+        //     _registers[cur_index + i] = new_sequence[i];
+        // }
+
+        int size_copy = _registers.size();
+        _registers.resize(_registers.size() + delta_len);
+        // 移动旧序列后的数据以为新序列腾出空间
+        if (delta_len && next_index != -1) {
+            std::move_backward(_registers.begin() + next_index,
+                               _registers.end() - delta_len, _registers.end());
         }
+
+        std::copy(new_sequence.begin(), new_sequence.begin() + seq_len,
+                  _registers.begin() + cur_index);
 
         end_iterator = _registers.end();
 
@@ -580,9 +837,47 @@ class HyperLogLog {
     }
 
     void MergeAdjacentValues(int cur_index) {
+        // auto cur_it = cur_index != -1 ? _registers.begin() + cur_index
+        //                               : _registers.begin();
+        // int scan_len = 5;
+
+        // while (cur_it < _registers.end() && scan_len--) {
+        //     if (IsXZeroOpcode(cur_it)) {
+        //         cur_it += 2;
+        //         continue;
+        //     } else if (IsZeroOpcode(cur_it)) {
+        //         cur_it++;
+        //         continue;
+        //     }
+
+        //     // 检查是否有两个相邻的val
+        //     auto next_it = cur_it + 1;
+        //     if (next_it < _registers.end() && IsValueOpcode(next_it)) {
+        //         int val_cur = GetValueFromOpcode(cur_it);
+        //         int val_next = GetValueFromOpcode(next_it);
+
+        //         // 如果相等说明需要合并成为一个
+        //         if (val_cur == val_next) {
+        //             int len =
+        //                 GetValueLength(cur_it) + GetValueLength(cur_it + 1);
+
+        //             if (len <= ValMaxLen) {
+        //                 SetSparseVal(next_it + 1, val_cur, len);
+        //                 cur_it = _registers.erase(
+        //                     cur_it);  // 删除当前操作码，并向左合并
+        //                               //
+        //                               合并后重新评估合并可能性，而不是简单地移动到下一个操作码
+        //                 continue;
+        //             }
+        //         }
+        //     }
+
+        //     cur_it++;
+        // }
+
         auto cur_it = cur_index != -1 ? _registers.begin() + cur_index
                                       : _registers.begin();
-        int scan_len = 5;
+        int scan_len = 5;  // 控制扫描的最大长度，避免无限循环
 
         while (cur_it < _registers.end() && scan_len--) {
             if (IsXZeroOpcode(cur_it)) {
@@ -593,28 +888,32 @@ class HyperLogLog {
                 continue;
             }
 
-            // 检查是否有两个相邻的val
-            auto next_it = cur_it + 1;
+            // 如果当前是VAL操作码，检查下一个操作码是否也是VAL且值相同
+            auto next_it = std::next(cur_it);
             if (next_it < _registers.end() && IsValueOpcode(next_it)) {
                 int val_cur = GetValueFromOpcode(cur_it);
                 int val_next = GetValueFromOpcode(next_it);
 
-                // 如果相等说明需要合并成为一个
+                // 如果当前值和下一个值相同，则尝试合并
                 if (val_cur == val_next) {
-                    int len =
-                        GetValueLength(cur_it) + GetValueLength(cur_it + 1);
+                    int len_cur = GetValueLength(cur_it);
+                    int len_next = GetValueLength(next_it);
+                    int combined_len = len_cur + len_next;
 
-                    if (len <= ValMaxLen) {
-                        SetSparseVal(next_it + 1, val_cur, len);
-                        cur_it = _registers.erase(
-                            cur_it);  // 删除当前操作码，并向左合并
-                                      // 合并后重新评估合并可能性，而不是简单地移动到下一个操作码
+                    // 检查合并后的长度是否不超过VAL操作码的最大长度
+                    if (combined_len <= ValMaxLen) {
+                        // 在当前位置设置新的VAL操作码
+                        SetSparseVal(cur_it, val_cur, combined_len);
+                        // 删除下一个操作码
+                        _registers.erase(next_it);
+                        // 因为已经合并并删除了next_it，所以不需要手动增加cur_it
                         continue;
                     }
                 }
             }
 
-            cur_it++;
+            // 如果没有合并发生，移动到下一个操作码
+            ++cur_it;
         }
 
         // 设置缓存无效
@@ -688,6 +987,18 @@ class HyperLogLog {
         value = (value >> byte_offset) & RegisterMax;  // 提取正确的寄存器值
 
         return value;
+    }
+
+    int SetDenseRegister(long index, uint8_t count) {
+        uint8_t cur_count = 0;
+
+        cur_count = GetRegisterValue(_registers.begin(), index);
+        if (count > cur_count) {
+            SetRegisterValue(_registers.begin(), index, count);
+            return 1;
+        } else {
+            return 0;
+        }
     }
 
     // 设置指定寄存器的值
