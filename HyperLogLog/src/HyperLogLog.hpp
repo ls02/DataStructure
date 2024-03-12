@@ -11,27 +11,21 @@
 #include <stdexcept>
 #include <vector>
 
-enum class HLLSetResult {
-    SUCCESS,
-    NOUPDATE,
-    PROMOTIONREQUIRED,
-    INVALIDFORMAT,
-    ERROR  // 其他错误
-};
-
-struct HLLHeader {
-    HLLHeader()
-        : _verification_code{'H', 'Y', 'L', 'L'}, _data_type(0), _cache{0} {
-        std::fill(std::begin(_future_use), std::end(_future_use), 0);
-    }
-
-    char _verification_code[4];
-    uint8_t _data_type;
-    uint8_t _future_use[3];
-    uint64_t _cache[8];
-};
-
 class HyperLogLog {
+   public:
+    // 头部信息
+    struct HLLHeader {
+        HLLHeader()
+            : _verification_code{'H', 'Y', 'L', 'L'}, _data_type(0), _cache{0} {
+            std::fill(std::begin(_future_use), std::end(_future_use), 0);
+        }
+
+        char _verification_code[4];
+        uint8_t _data_type;
+        uint8_t _future_use[3];
+        uint64_t _cache[8];
+    };
+
    public:
     static constexpr int Precision = 14;
     static constexpr int QBits = 64 - Precision;
@@ -65,7 +59,7 @@ class HyperLogLog {
    public:
     HyperLogLog() { Init(); }
 
-    void Init() {
+    inline void Init() {
         // 默认使用稀疏表示
         _head._data_type = SparseEncoding;
 
@@ -94,7 +88,6 @@ class HyperLogLog {
             case SparseEncoding:
                 return AddToSparse(str);
             default:
-                // printf("2");
                 return -1;
         }
     }
@@ -102,7 +95,6 @@ class HyperLogLog {
     int count() {
         uint64_t card = 0;
         if (IsCacheValid()) {
-            // printf("1");
             // 如果缓存数据有效则不用重新计算
             card = (uint64_t)_head._cache[0];
             card |= (uint64_t)_head._cache[1] << 8;
@@ -118,7 +110,6 @@ class HyperLogLog {
 
             card = EstimateCardinality(is_invalid);
             if (is_invalid) {
-                // printf("缓存失效 err");
                 return -1;
             }
 
@@ -134,6 +125,69 @@ class HyperLogLog {
 
         return card;
     }
+
+    int Merge(std::vector<uint8_t> &max) {
+        if (_head._data_type == DenseEncoding) {
+            uint8_t val;
+
+            for (int i = 0; i < Registers; i++) {
+                val = GetRegisterValue(_registers.begin(), i);
+
+                if (val > max[i]) {
+                    max[i] = val;
+                }
+            }
+        } else {
+            // 稀疏模式
+            auto cur_it = _registers.begin();
+            int run_len = 0;
+            int reg_val = 0;
+            int index = 0;
+
+            while (cur_it <= _registers.end()) {
+                if (IsZeroOpcode(cur_it)) {
+                    run_len = GetZeroLength(cur_it);
+                    index += run_len;
+                    cur_it++;
+                } else if (IsXZeroOpcode(cur_it)) {
+                    run_len = GetXZeroLength(cur_it);
+                    index += run_len;
+                    cur_it += 2;
+                } else {
+                    run_len = GetValueLength(cur_it);
+                    reg_val = GetValueFromOpcode(cur_it);
+                    // 超出预定大小
+                    if ((run_len + index) > Registers) {
+                        break;
+                    }
+
+                    while (run_len--) {
+                        if (reg_val > max[index]) {
+                            max[index] = reg_val;
+                        }
+
+                        index++;
+                    }
+                    cur_it++;
+                }
+            }
+
+            // 如果不相等说明稀疏型被损坏了
+            if (index != Registers) {
+                return ERR;
+            }
+        }
+
+        return OK;
+    }
+
+    enum class HLLSetResult {
+        SUCCESS,
+        NOUPDATE,           // val 需要合并为一个
+        PROMOTIONREQUIRED,  // 稀疏型需要转换为密集型
+        INVALIDFORMAT,      // 稀疏型损坏
+        ERROR               // 其他错误
+    };
 
    private:
     // 统计 count 并且通过调和平均法算出来
@@ -432,20 +486,20 @@ class HyperLogLog {
 
         switch (len & 7) {
             case 7:
-                h ^= (uint64_t)data[6] << 48; /* fall-thru */
+                h ^= (uint64_t)data[6] << 48;
             case 6:
-                h ^= (uint64_t)data[5] << 40; /* fall-thru */
+                h ^= (uint64_t)data[5] << 40;
             case 5:
-                h ^= (uint64_t)data[4] << 32; /* fall-thru */
+                h ^= (uint64_t)data[4] << 32;
             case 4:
-                h ^= (uint64_t)data[3] << 24; /* fall-thru */
+                h ^= (uint64_t)data[3] << 24;
             case 3:
-                h ^= (uint64_t)data[2] << 16; /* fall-thru */
+                h ^= (uint64_t)data[2] << 16;
             case 2:
-                h ^= (uint64_t)data[1] << 8; /* fall-thru */
+                h ^= (uint64_t)data[1] << 8;
             case 1:
                 h ^= (uint64_t)data[0];
-                h *= m; /* fall-thru */
+                h *= m;
         };
 
         h ^= h >> r;
@@ -469,7 +523,6 @@ class HyperLogLog {
             if (new_size > MaxBytesForSparseRepresentation) {
                 new_size = MaxBytesForSparseRepresentation;
             }
-
             _registers.reserve(new_size);
         }
     }
@@ -484,7 +537,6 @@ class HyperLogLog {
         std::uint64_t hash = MurmurHash64B(
             reinterpret_cast<const unsigned char *>(element.c_str()),
             element.size(), 0xadc83b19ULL);
-        // MurmurHash64A(element.data(), element.size(), 0xadc83b19ULL);
         std::uint64_t index = hash & PMask;
         hash >>= Precision;
         hash |=
@@ -516,26 +568,26 @@ class HyperLogLog {
 
         switch (result) {
             case HLLSetResult::SUCCESS:
-                // 处理成功的情况
-                break;
+                return 0;
             case HLLSetResult::NOUPDATE:
                 // 处理没有更新的情况
-                break;
+                // 已在SetSparseRegister 当中处理，原因：需要里面的一个
+                // prev_index 数据
+                return 0;
             case HLLSetResult::PROMOTIONREQUIRED:
                 // 处理需要提升类型的情况
+                // 如果返回 -1 说明稀疏型数据格式损坏
                 return ConvertHllFromSparseToDense();
             case HLLSetResult::INVALIDFORMAT:
                 // 处理无效格式的情况
-                break;
+                return -1;
             case HLLSetResult::ERROR:
                 // 处理错误的情况
-                break;
+                return -2;
             default:
                 // 处理其他可能的未知情况
-                break;
+                return -3;
         }
-
-        return 0;
     }
 
     int ConvertHllFromSparseToDense() {
@@ -618,7 +670,6 @@ class HyperLogLog {
         // 如果 count 大于 valMax的话表示无法存储下了
         // 需要替换成密集型存储
         if (count > ValMaxValue) {
-            // printf("count 提升\n");
             return HLLSetResult::PROMOTIONREQUIRED;
         }
 
@@ -644,12 +695,11 @@ class HyperLogLog {
                 opcode_length = 2;
             }
 
-            // 如果 index 计算有误那么将终止，如果没问题是不可能符合这个条件的
+            // 如果 index
+            // 计算有误那么将终止，如果没问题是不可能符合这个条件的
             if (index <= first_index + span_length - 1) {
                 break;
             }
-            // previous_opcode = current_iterator;
-            // current_iterator += opcode_length;
             prev_index = cur_index;
             cur_index += opcode_length;
             first_index += span_length;
@@ -657,7 +707,6 @@ class HyperLogLog {
 
         // span一定不可能为0
         if (!span_length || cur_index >= end_index) {
-            // printf("span error\n");
             return HLLSetResult::INVALIDFORMAT;
         }
 
@@ -695,7 +744,6 @@ class HyperLogLog {
             if (run_length == 1) {
                 SetSparseVal(_registers.begin() + cur_index, count, 1);
 
-                // printf("merge 1合并\n");
                 MergeAdjacentValues(prev_index);
                 return HLLSetResult::NOUPDATE;
             }
@@ -706,14 +754,13 @@ class HyperLogLog {
         if (is_zero_opcode && run_length == 1) {
             SetSparseVal(_registers.begin() + cur_index, count, 1);
 
-            // printf("merge 2合并\n");
             MergeAdjacentValues(prev_index);
             return HLLSetResult::NOUPDATE;
         }
 
+        //  把计算好的数据先用一个临时变量保存
         std::vector<uint8_t> new_sequence(5);
         auto sequence_iterator = new_sequence.begin();
-
         int last = first_index + span_length - 1;
         long length = 0;
 
@@ -771,41 +818,6 @@ class HyperLogLog {
             return HLLSetResult::PROMOTIONREQUIRED;
         }
 
-        // _registers.resize(_registers.size() + delta_len);
-        // 移动旧序列后的数据以为新序列腾出空间
-        // if (delta_len && next_opcode != end_iterator) {
-        //     std::move_backward(next_opcode, end_iterator,
-        //                        next_opcode + delta_len);
-        // }
-
-        // std::copy(new_sequence.begin(), new_sequence.begin() + delta_len,
-        //           current_iterator);
-
-        // if (delta_len && next_index != -1) {
-        //     auto it_tmp = _registers.begin() + cur_index;
-        //     for (int i = 0; i < seq_len; i++) {
-        //         it_tmp = _registers.insert(it_tmp, new_sequence[i]);
-        //         it_tmp++;
-        //     }
-        // } else {
-        //     _registers.resize(_registers.size() + delta_len);
-        //     for (int i = 0; i < seq_len; i++) {
-        //         _registers[cur_index + i] = new_sequence[i];
-        //     }
-        // }
-
-        // if (delta_len && next_index != -1) {
-        //     // 需要保存区间
-        //     for (int i = 0; i < delta_len; i++) {
-        //         _registers.push_back(_registers[next_index + i]);
-        //     }
-        // }
-
-        // // 覆盖区间
-        // for (int i = 0; i < seq_len; i++) {
-        //     _registers[cur_index + i] = new_sequence[i];
-        // }
-
         int size_copy = _registers.size();
         _registers.resize(_registers.size() + delta_len);
         // 移动旧序列后的数据以为新序列腾出空间
@@ -837,44 +849,6 @@ class HyperLogLog {
     }
 
     void MergeAdjacentValues(int cur_index) {
-        // auto cur_it = cur_index != -1 ? _registers.begin() + cur_index
-        //                               : _registers.begin();
-        // int scan_len = 5;
-
-        // while (cur_it < _registers.end() && scan_len--) {
-        //     if (IsXZeroOpcode(cur_it)) {
-        //         cur_it += 2;
-        //         continue;
-        //     } else if (IsZeroOpcode(cur_it)) {
-        //         cur_it++;
-        //         continue;
-        //     }
-
-        //     // 检查是否有两个相邻的val
-        //     auto next_it = cur_it + 1;
-        //     if (next_it < _registers.end() && IsValueOpcode(next_it)) {
-        //         int val_cur = GetValueFromOpcode(cur_it);
-        //         int val_next = GetValueFromOpcode(next_it);
-
-        //         // 如果相等说明需要合并成为一个
-        //         if (val_cur == val_next) {
-        //             int len =
-        //                 GetValueLength(cur_it) + GetValueLength(cur_it + 1);
-
-        //             if (len <= ValMaxLen) {
-        //                 SetSparseVal(next_it + 1, val_cur, len);
-        //                 cur_it = _registers.erase(
-        //                     cur_it);  // 删除当前操作码，并向左合并
-        //                               //
-        //                               合并后重新评估合并可能性，而不是简单地移动到下一个操作码
-        //                 continue;
-        //             }
-        //         }
-        //     }
-
-        //     cur_it++;
-        // }
-
         auto cur_it = cur_index != -1 ? _registers.begin() + cur_index
                                       : _registers.begin();
         int scan_len = 5;  // 控制扫描的最大长度，避免无限循环
